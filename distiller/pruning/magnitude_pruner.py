@@ -35,3 +35,33 @@ class MagnitudeParameterPruner(_ParameterPruner):
     def set_param_mask(self, param, param_name, zeros_mask_dict, meta):
         threshold = self.thresholds.get(param_name, self.thresholds['*'])
         zeros_mask_dict[param_name].mask = distiller.threshold_mask(param.data, threshold)
+        
+class MagnitudeParameterPrunerPercThreshold(_ParameterPruner):
+    """This is the most basic magnitude-based pruner.
+
+    This pruner supports configuring a scalar threshold for each layer.
+    A default threshold is mandatory and is used for layers without explicit
+    threshold setting.
+
+    """
+    def __init__(self, name, threshold_ratio, **kwargs):
+        super(MagnitudeParameterPrunerPercThreshold, self).__init__(name)
+        # assert 'threshold_ratio' is not None
+        # Make sure there is a default threshold to use
+        # assert '*' in threshold_ratio
+        self.threshold_ratio = threshold_ratio
+        
+    # Extract boundary value at ratio x while sorting data
+    def read_boundary_value_with_ratio(data, ratio):
+        arr = data
+        arr = list(arr.reshape(arr.size))
+        # arr.sort(cmp=lambda x, y: cmp(abs(x), abs(y)))  # Python2
+        arr.sort(key=abs)  # Python3
+        thresh = abs(arr[int(len(arr) * ratio) - 1])
+        return thresh
+
+    def set_param_mask(self, param, param_name, zeros_mask_dict, meta):
+        percent_to_prune = self.threshold_ratio.get(param_name)
+        data =  param.data.view(param.data.numel())
+        threshold = self.read_boundary_value_with_ratio(data, percent_to_prune)
+        zeros_mask_dict[param_name].mask = distiller.threshold_mask(param.data, threshold)

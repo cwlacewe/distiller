@@ -18,7 +18,7 @@
 :mod:`distiller.pruning` is a package implementing various pruning algorithms.
 """
 
-from .magnitude_pruner import MagnitudeParameterPruner
+from .magnitude_pruner import MagnitudeParameterPruner, MagnitudeParameterPrunerPercThreshold
 from .automated_gradual_pruner import AutomatedGradualPruner
 from .level_pruner import SparsityLevelParameterPruner
 from .sensitivity_pruner import SensitivityPruner
