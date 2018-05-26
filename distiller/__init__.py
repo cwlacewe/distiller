@@ -35,20 +35,36 @@ del thinning
 #del policy
 
 # Distiller version
-__version__ = "0.1.0"
+__version__ = "0.2.0-pre"
 
-def model_find_param_name(model, tensor_to_find):
-    """Look up the name of a model tensor.
+def model_find_param_name(model, param_to_find):
+    """Look up the name of a model parameter.
 
     Arguments:
         model: the model to search
-        tensor_to_find: the tensors who's name we want to look up
+        param_to_find: the parameter whose name we want to look up
 
     Returns:
-        The parameter name (string) or None, if the paramter was not found.
+        The parameter name (string) or None, if the parameter was not found.
     """
-    for name, tensor  in model.state_dict().items():
-        if tensor is tensor_to_find:
+    for name, param  in model.named_parameters():
+        if param is param_to_find:
+            return name
+    return None
+
+
+def model_find_module_name(model, module_to_find):
+    """Look up the name of a module in a model.
+
+    Arguments:
+        model: the model to search
+        module_to_find: the module whose name we want to look up
+
+    Returns:
+        The module name (string) or None, if the module was not found.
+    """
+    for name, m in model.named_modules():
+        if m == module_to_find:
             return name
     return None
 

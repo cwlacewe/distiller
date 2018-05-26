@@ -79,11 +79,7 @@ from distiller.data_loggers import TensorBoardLogger, PythonLogger, ActivationSp
 import distiller.quantization as quantization
 from models import ALL_MODEL_NAMES, create_model
 
-
 msglogger = None
-log_filename = ''
-
-
 parser = argparse.ArgumentParser(description='Distiller image classification model compression')
 parser.add_argument('data', metavar='DIR', help='path to dataset')
 parser.add_argument('--arch', '-a', metavar='ARCH', default='resnet18',
@@ -115,7 +111,7 @@ parser.add_argument('--act-stats', dest='activation_stats', action='store_true',
                     help='collect activation statistics (WARNING: this slows down training)')
 parser.add_argument('--param-hist', dest='log_params_histograms', action='store_true', default=False,
                     help='log the paramter tensors histograms to file (WARNING: this can use significant disk space)')
-SUMMARY_CHOICES = ['sparsity', 'compute', 'optimizer', 'model', 'png']
+SUMMARY_CHOICES = ['sparsity', 'compute', 'optimizer', 'model', 'modules', 'png']
 parser.add_argument('--summary', type=str, choices=SUMMARY_CHOICES,
                     help='print a summary of the model, and exit - options: ' +
                     ' | '.join(SUMMARY_CHOICES))
@@ -134,22 +130,23 @@ parser.add_argument('--gpus', metavar='DEV_ID', default=None,
 parser.add_argument('--name', '-n', metavar='NAME', default=None, help='Experiment name')
 
 
+def check_pytorch_version():
+    if torch.__version__ < '0.4.0':
+        print("\nNOTICE:")
+        print("The Distiller \'master\' branch now requires at least PyTorch version 0.4.0 due to "
+              "PyTorch API changes which are not backward-compatible.\n"
+              "Please install PyTorch 0.4.0 or its derivative.\n"
+              "If you are using a virtual environment, do not forget to update it:\n"
+              "  1. Deactivate the old environment\n"
+              "  2. Install the new environment\n"
+              "  3. Activate the new environment")
+        exit(1)
+
 def main():
-
-    args = parser.parse_args()
-
-    # The Distiller library writes logs to the Python logger, so we configure it.
     global msglogger
-    timestr = time.strftime("%Y.%m.%d-%H%M%S")
-    filename = timestr if args.name is None else args.name + '___' + timestr
-    logdir = './logs' + '/' + filename
-    if not os.path.exists(logdir):
-        os.makedirs(logdir)
-    log_filename = os.path.join(logdir, filename + '.log')
-    logging.config.fileConfig(os.path.join(script_dir, 'logging.conf'), defaults={'logfilename': log_filename})
-    msglogger = logging.getLogger()
-
-    msglogger.info('Log file for this run: ' + os.path.realpath(log_filename))
+    check_pytorch_version()
+    args = parser.parse_args()
+    msglogger = apputils.config_pylogger(os.path.join(script_dir, 'logging.conf'), args.name)
 
     # Log various details about the execution environment.  It is sometimes useful
     # to refer to past experiment executions and this information may be useful.
@@ -196,12 +193,13 @@ def main():
     args.dataset = 'cifar10' if 'cifar' in args.arch else 'imagenet'
 
     # Create the model
-    model = create_model(args.pretrained, args.dataset, args.arch, device_ids=args.gpus)
+    is_parallel = args.summary != 'png' # For PNG summary, parallel graphs are illegible
+    model = create_model(args.pretrained, args.dataset, args.arch, parallel=is_parallel, device_ids=args.gpus)
 
     compression_scheduler = None
     # Create a couple of logging backends.  TensorBoardLogger writes log files in a format
     # that can be read by Google's Tensor Board.  PythonLogger writes to the Python logger.
-    tflogger = TensorBoardLogger(logdir)
+    tflogger = TensorBoardLogger(msglogger.logdir)
     pylogger = PythonLogger(msglogger)
 
     # We can optionally resume from a checkpoint
@@ -362,13 +360,13 @@ def train(train_loader, model, criterion, optimizer, epoch,
 
         # Measure accuracy and record loss
         classerr.add(output.data, target)
-        losses['objective_loss'].add(loss.data[0])
+        losses['objective_loss'].add(loss.item())
 
         if compression_scheduler:
             # Before running the backward phase, we add any regularization loss computed by the scheduler
             regularizer_loss = compression_scheduler.before_backward_pass(epoch, train_step, steps_per_epoch, loss)
             loss += regularizer_loss
-            losses['regularizer_loss'].add(regularizer_loss.data[0])
+            losses['regularizer_loss'].add(regularizer_loss.item())
 
         # Compute the gradient and do SGD step
         optimizer.zero_grad()
@@ -446,7 +444,7 @@ def _validate(data_loader, model, criterion, loggers, print_freq, epoch=-1):
             loss = criterion(output, target_var)
 
             # measure accuracy and record loss
-            losses['objective_loss'].add(loss.data[0])
+            losses['objective_loss'].add(loss.item())
             classerr.add(output.data, target)
             # if confusion:
             #     confusion.add(output.data, target)
@@ -501,8 +499,8 @@ if __name__ == '__main__':
     except Exception as e:
         if msglogger is not None:
             msglogger.error(traceback.format_exc())
-        exit(1)
+        raise e
     finally:
         if msglogger is not None:
             msglogger.info('')
-            msglogger.info('Log file for this run: ' + os.path.realpath(log_filename))
+            msglogger.info('Log file for this run: ' + os.path.realpath(msglogger.log_filename))

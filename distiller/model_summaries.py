@@ -43,7 +43,7 @@ def model_summary(model, optimizer, what, dataset=None):
         distiller.log_weights_sparsity(model, -1, loggers=[pylogger, csvlogger])
     elif what == 'compute':
         if dataset == 'imagenet':
-            dummy_input = Variable(torch.randn(1, 3, 224, 224), requires_grad=False)
+            dummy_input = Variable(torch.randn(1, 3, 224, 224))
         elif dataset == 'cifar10':
             dummy_input = Variable(torch.randn(1, 3, 32, 32))
         else:
@@ -58,8 +58,19 @@ def model_summary(model, optimizer, what, dataset=None):
     elif what == 'optimizer':
         optimizer_summary(optimizer)
     elif what == 'model':
-        print(model)  # print the simple form of the model
-
+        # print the simple form of the model
+        print(model)
+    elif what == 'modules':
+        # Print the names of non-leaf modules
+        # Remember that in PyTorch not every node is a module (e.g. F.relu).
+        # Also remember that parameterless modules, like nn.MaxPool2d, can be used multiple
+        # times in the same model, but they will only appear once in the modules list. 
+        nodes = []
+        for name, module in model.named_modules():
+            # Only print leaf modules
+            if len(module._modules) == 0:
+                nodes.append([name, module.__class__.__name__])
+        print(tabulate(nodes, headers=['Name', 'Type']))
 
 def optimizer_summary(optimizer):
     assert isinstance(optimizer, torch.optim.SGD)
@@ -101,9 +112,9 @@ def weights_sparsity_summary(model, return_total_sparsity=False, param_dims=[2,4
                 distiller.sparsity_2D(param)*100,
                 distiller.sparsity_3D(param)*100,
                 (1-_density)*100,
-                param.std(),
-                param.mean(),
-                param.abs().mean()
+                param.std().item(),
+                param.mean().item(),
+                param.abs().mean().item()
             ])
 
     total_sparsity = (1 - sparse_params_size/params_size)*100
@@ -134,6 +145,7 @@ def conv_visitor(self, input, output, df, model, memo):
     assert isinstance(self, torch.nn.Conv2d)
     if self in memo:
         return
+
     weights_vol = self.out_channels * self.in_channels * self.kernel_size[0] * self.kernel_size[1]
 
     # Multiply-accumulate operations: MACs = volume(OFM) * (#IFM * K^2) / #Groups
@@ -158,18 +170,20 @@ def module_visitor(self, input, output, df, model, weights_vol, macs, attrs=None
     in_features_shape = input[0].size()
     out_features_shape = output.size()
 
-    param_name = distiller.model_find_param_name(model, self.weight.data)
-    if param_name is None:
-        return
-    mod_name = param_name[:param_name.find(".weight")]
+    mod_name = distiller.model_find_module_name(model, self)
     df.loc[len(df.index)] = ([mod_name, self.__class__.__name__,
                               attrs if attrs is not None else '',
                               distiller.size_to_str(in_features_shape), distiller.volume(input[0]),
                               distiller.size_to_str(out_features_shape), distiller.volume(output),
                               weights_vol, int(macs)])
 
+
 def model_performance_summary(model, dummy_input, batch_size=1):
-    """Collect performance data"""
+    """Collect performance data
+
+    warning: in PyTorch 0.4 this function does not return correct values when
+    the graph contains torch.nn.DataParallel layers.
+    """
     def install_perf_collector(m):
         if isinstance(m, torch.nn.Conv2d):
             hook_handles.append(m.register_forward_hook(
