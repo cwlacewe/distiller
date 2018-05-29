@@ -17,8 +17,8 @@ RUN apt-get update && apt-get install -y \
     
 RUN git clone https://github.com/nervanasystems/distiller && \
     cd distiller && \
-    pip install -r requirements.txt && \
-    pip install git+https://github.com/szagoruyko/pytorchviz \
+    pip3 install -r requirements.txt && \
+    pip3 install git+https://github.com/szagoruyko/pytorchviz \
     pretrainedmodels \
     tqdm
     
@@ -26,3 +26,5 @@ RUN jupyter nbextension enable --py widgetsnbextension --sys-prefix
 
 WORKDIR $DEFAULT_WORKDIR
 RUN rm -rf distiller   
+
+WORKDIR /home

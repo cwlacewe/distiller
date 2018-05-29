@@ -7,7 +7,7 @@ sudo nvidia-docker run $DOCKER_PROXY_RUN_ARGS \
 -v $data_dir:$data_dir \
 -p 8889:8888 \
 -p 6060:6006 \
---shm-size 12G \
+--shm-size 35G \
 -it cwl_distiller:gpu \
 bash
 
